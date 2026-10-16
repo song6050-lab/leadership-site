@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>문의함 관리</title>
+<style>
+  :root{--navy:#0f1e33;--gold:#b8955a;--ink:#1c2533;--muted:#5b6575;--line:#e4ddd0;--paper:#faf8f4}
+  *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{display:none!important}
+  body{font-family:"Noto Sans KR",system-ui,sans-serif;background:var(--paper);color:var(--ink);font-size:16px;line-height:1.6;word-break:keep-all}
+  header{background:var(--navy);color:#fff;padding:16px 20px;display:flex;justify-content:space-between;align-items:center}
+  header h1{font-size:18px}
+  header button{background:none;border:1px solid rgba(255,255,255,.4);color:#fff;padding:8px 14px;font-size:14px;border-radius:2px;cursor:pointer}
+  main{max-width:760px;margin:0 auto;padding:20px 16px 60px}
+  .login{background:#fff;border:1px solid var(--line);border-top:3px solid var(--gold);padding:28px 22px;margin-top:40px}
+  .login label{display:block;font-weight:700;margin-bottom:8px}
+  .login input{width:100%;font-size:16px;padding:14px;border:1px solid #d6d0c4;border-radius:2px}
+  .login button,.reload{width:100%;margin-top:14px;min-height:50px;font-size:16px;font-weight:700;background:var(--navy);color:#fff;border:0;border-radius:2px;cursor:pointer}
+  .err{color:#a3372c;margin-top:12px}
+  .summary{background:#fff;border:1px solid var(--line);padding:20px;display:flex;align-items:baseline;gap:12px}
+  .summary b{font-size:44px;color:var(--navy);line-height:1}
+  .summary span{color:var(--muted)}
+  .filters{display:flex;gap:8px;flex-wrap:wrap;margin:16px 0}
+  .filters button{min-height:42px;padding:0 14px;border:1px solid var(--line);background:#fff;border-radius:2px;font-size:15px;cursor:pointer}
+  .filters button.on{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .card{background:#fff;border:1px solid var(--line);padding:18px;margin-bottom:12px}
+  .card .top{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:14px}
+  .tag{display:inline-block;font-size:13px;font-weight:700;padding:2px 8px;border:1px solid var(--gold);color:#8a6b37}
+  .tag.open{background:var(--navy);color:#fff;border-color:var(--navy)}
+  .card h2{font-size:18px;margin:8px 0 2px}
+  .company{color:var(--muted);font-size:15px}
+  .contact{display:inline-block;margin-top:6px;font-size:17px;font-weight:700;color:var(--navy);background:none;border:0;border-bottom:1px dashed var(--gold);cursor:pointer;padding:2px 0}
+  .message{margin-top:10px;white-space:pre-wrap;background:var(--paper);padding:12px;font-size:15px}
+  .status{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:14px}
+  .status button{min-height:46px;border:1px solid var(--line);background:#fff;font-size:15px;border-radius:2px;cursor:pointer}
+  .status button.on{background:var(--gold);border-color:var(--gold);color:var(--navy);font-weight:700}
+  .empty{color:var(--muted);text-align:center;padding:40px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>문의함</h1>
+  <button id="logout" hidden>잠그기</button>
+</header>
+<main>
+  <form class="login" id="login">
+    <label for="pw">관리자 비밀번호</label>
+    <input id="pw" type="password" autocomplete="current-password" required>
+    <button type="submit">들어가기</button>
+    <p class="err" id="login-err" role="alert"></p>
+  </form>
+
+  <section id="board" hidden>
+    <div class="summary"><b id="new-count">0</b><span>건의 새 문의</span></div>
+    <div class="filters" id="filters">
+      <button data-f="all" class="on">전체</button>
+      <button data-f="기업 교육·컨설팅 문의">교육·컨설팅</button>
+      <button data-f="공개강좌 신청">공개강좌</button>
+      <button data-f="새 문의">새 문의만</button>
+    </div>
+    <p class="err" id="board-err" role="alert"></p>
+    <div id="list"></div>
+    <button class="reload" id="reload">새로고침</button>
+  </section>
+</main>
+
+<script>
+  var KEY = 'admin_pw';
+  var STATUSES = ['새 문의', '연락함', '완료'];
+  var rows = [], filter = 'all';
+  var $ = function (id) { return document.getElementById(id); };
+  var pw = function () { try { return sessionStorage.getItem(KEY) || ''; } catch (e) { return ''; } };
+
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function fmt(d) { var t = new Date(d); return t.toLocaleDateString('ko-KR') + ' ' + t.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }); }
+
+  async function api(method, body) {
+    var r = await fetch('/api/admin', { method: method, headers: { 'x-admin-password': pw(), 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+    var j = await r.json().catch(function () { return {}; });
+    if (r.status === 401) { lock('비밀번호가 맞지 않아요.'); throw new Error(''); }
+    if (!r.ok) throw new Error(j.error || '문제가 생겼어요.');
+    return j;
+  }
+
+  function lock(message) {
+    try { sessionStorage.removeItem(KEY); } catch (e) {}
+    $('board').hidden = true; $('logout').hidden = true; $('login').hidden = false;
+    $('login-err').textContent = message || '';
+    $('pw').value = ''; $('pw').focus();
+  }
+
+  async function load() {
+    $('board-err').textContent = '';
+    try {
+      var j = await api('GET');
+      rows = j.rows || [];
+      $('login').hidden = true; $('board').hidden = false; $('logout').hidden = false;
+      render();
+    } catch (e) { if (e.message) $('board-err').textContent = e.message; }
+  }
+
+  function render() {
+    $('new-count').textContent = rows.filter(function (r) { return r.status === '새 문의'; }).length;
+    var list = rows.filter(function (r) { return filter === 'all' || r.type === filter || r.status === filter; });
+    if (!list.length) { $('list').innerHTML = '<p class="empty">문의가 없어요.</p>'; return; }
+    $('list').innerHTML = list.map(function (r) {
+      return '<article class="card">' +
+        '<div class="top"><span class="tag' + (r.type === '공개강좌 신청' ? ' open' : '') + '">' + esc(r.type === '공개강좌 신청' ? '공개강좌' : '교육·컨설팅') + '</span><span>' + fmt(r.created_at) + '</span></div>' +
+        '<h2>' + esc(r.name) + '</h2>' +
+        (r.company ? '<p class="company">' + esc(r.company) + '</p>' : '') +
+        '<button class="contact" data-copy="' + esc(r.contact) + '">' + esc(r.contact) + '</button>' +
+        (r.message ? '<p class="message">' + esc(r.message) + '</p>' : '') +
+        '<div class="status">' + STATUSES.map(function (s) {
+          return '<button data-id="' + r.id + '" data-s="' + s + '"' + (r.status === s ? ' class="on"' : '') + '>' + s + '</button>';
+        }).join('') + '</div></article>';
+    }).join('');
+  }
+
+  $('login').addEventListener('submit', function (e) {
+    e.preventDefault();
+    try { sessionStorage.setItem(KEY, $('pw').value); } catch (err) {}
+    $('login-err').textContent = '';
+    load();
+  });
+  $('logout').addEventListener('click', function () { lock(''); });
+  $('reload').addEventListener('click', load);
+  $('filters').addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    filter = b.dataset.f;
+    document.querySelectorAll('#filters button').forEach(function (x) { x.classList.toggle('on', x === b); });
+    render();
+  });
+  $('list').addEventListener('click', async function (e) {
+    var c = e.target.closest('[data-copy]');
+    if (c) {
+      try { await navigator.clipboard.writeText(c.dataset.copy); var t = c.textContent; c.textContent = '복사했어요'; setTimeout(function () { c.textContent = t; }, 1200); }
+      catch (err) { var range = document.createRange(); range.selectNodeContents(c); var sel = getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+      return;
+    }
+    var b = e.target.closest('[data-s]');
+    if (b) {
+      try { await api('PATCH', { id: Number(b.dataset.id), status: b.dataset.s }); load(); }
+      catch (err) { if (err.message) $('board-err').textContent = err.message; }
+    }
+  });
+
+  if (pw()) load(); else $('pw').focus();
+</script>
+</body>
+</html>
