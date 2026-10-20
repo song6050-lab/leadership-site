@@ -57,7 +57,14 @@
   .badge{display:inline-flex;align-items:center;gap:10px;padding:5px 14px 5px 5px;border-radius:999px;font-size:13.5px;color:#c7d2fe}
   .badge b{background:var(--indigo);color:#fff;font-family:var(--display);font-size:12px;padding:3px 10px;border-radius:999px}
   .hero h1{font-family:var(--serif);font-weight:600;font-size:clamp(40px,7vw,76px);line-height:1.12;letter-spacing:-.025em;margin:26px auto 20px;max-width:900px}
-  .hero h1 em{font-style:normal;background:linear-gradient(90deg,#a5b4fc,#c4b5fd,#f9a8d4);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero h1 em{font-style:normal;background:linear-gradient(90deg,#a5b4fc,#c4b5fd,#f9a8d4,#c4b5fd,#a5b4fc);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 8s linear infinite}
+  .hero h1 .ln{display:block}
+  @keyframes shimmer{to{background-position:200% 0}}
+
+  /* 첫 화면 모션: 리더(제목)에서 퍼진 물결이 점들을 깨우고, 깨어난 점들이 같은 방향으로 함께 돈다 */
+  .flow{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;-webkit-mask-image:linear-gradient(#000 65%,transparent);mask-image:linear-gradient(#000 65%,transparent)}
+  .rise{opacity:0;transform:translateY(18px);animation:rise .9s cubic-bezier(.2,.7,.2,1) forwards}
+  @keyframes rise{to{opacity:1;transform:none}}
   .typing{color:#94a3b8;font-size:clamp(16px,2vw,19px);min-height:1.8em}
   .typing::after{content:"";display:inline-block;width:2px;height:1.1em;background:var(--indigo-soft);margin-left:4px;vertical-align:-3px;animation:blink 1s steps(1) infinite}
   @keyframes blink{50%{opacity:0}}
@@ -85,7 +92,7 @@
   .marquee-track span:hover{color:#e2e8f0}
   @keyframes slide{to{transform:translateX(-50%)}}
   @media(max-width:640px){.ref-bar{grid-template-columns:1fr}.ref-bar .label{border-right:0;border-bottom:1px solid var(--glass-border);padding:12px 18px}}
-  @media(prefers-reduced-motion:reduce){.marquee-track,.typing::after{animation:none}}
+  @media(prefers-reduced-motion:reduce){.marquee-track,.typing::after,.hero h1 em{animation:none}.rise{animation:none;opacity:1;transform:none}}
 
   /* 스크롤 따라가는 본문 */
   .content{padding:110px 0}
@@ -212,9 +219,10 @@
   <!-- 1. 첫 화면 -->
   <section class="hero">
     <div class="orb a"></div><div class="orb b"></div>
+    <canvas class="flow" id="flow" aria-hidden="true"></canvas>
     <div class="wrap">
-      <a class="badge glass" href="#open"><b>OPEN</b>공개강좌 신청을 받고 있어요</a>
-      <h1>리더가 바뀌면<br><em>조직이 움직입니다</em></h1>
+      <a class="badge glass rise" href="#open"><b>OPEN</b>공개강좌 신청을 받고 있어요</a>
+      <h1 id="hero-title"><span class="ln rise" style="animation-delay:.15s">리더가 바뀌면</span><span class="ln rise" style="animation-delay:.35s"><em>조직이 움직입니다</em></span></h1>
       <p class="typing" id="typing" aria-label="리더십 강의, 워크숍, 조직 컨설팅을 설계부터 진행까지 함께합니다"></p>
 
       <!-- 바로 묻는 입력 상자: 적은 내용이 아래 문의 폼으로 이어진다 -->
@@ -476,6 +484,101 @@
     if (matchMedia('(prefers-reduced-motion: reduce)').matches) { el.textContent = text; return; }
     var i = 0;
     (function tick() { el.textContent = text.slice(0, ++i); if (i < text.length) setTimeout(tick, 55); })();
+  })();
+
+  // 첫 화면 모션: 제목에서 물결이 퍼지면 점들이 밝아지고 서로 이어지며 한 방향으로 함께 돈다
+  (function () {
+    var cv = document.getElementById('flow');
+    if (!cv || !cv.getContext) return;
+    var ctx = cv.getContext('2d');
+    var hero = cv.parentElement;
+    var reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var W, H, nodes = [], leader = { x: 0, y: 0 }, waves = [], nextWave = 0.8, last = 0, visible = true, raf = 0;
+
+    function size() {
+      var r = hero.getBoundingClientRect(), t = document.getElementById('hero-title').getBoundingClientRect();
+      var dpr = Math.min(window.devicePixelRatio || 1, 2);
+      W = r.width; H = r.height;
+      cv.width = W * dpr; cv.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      leader.x = t.left - r.left + t.width / 2;
+      leader.y = t.top - r.top + t.height / 2;
+      var n = Math.round(Math.min(90, Math.max(34, W * H / 15000)));
+      nodes = [];
+      for (var i = 0; i < n; i++) nodes.push({ x: Math.random() * W, y: Math.random() * H, a: Math.random() * 6.283, lit: reduce ? Math.random() : 0, r: 1 + Math.random() * 1.6, hit: -1 });
+    }
+
+    function step(dt) {
+      nextWave -= dt;
+      if (nextWave <= 0) { waves.push({ r: 0, id: Math.random() }); nextWave = 6.5; }
+      var maxR = Math.hypot(Math.max(leader.x, W - leader.x), Math.max(leader.y, H - leader.y));
+      for (var w = waves.length - 1; w >= 0; w--) { waves[w].r += 240 * dt; if (waves[w].r > maxR) waves.splice(w, 1); }
+      nodes.forEach(function (p) {
+        var dx = p.x - leader.x, dy = p.y - leader.y, d = Math.hypot(dx, dy) || 1;
+        waves.forEach(function (wv) { if (p.hit !== wv.id && d < wv.r) { p.hit = wv.id; p.lit = 1; } });
+        p.lit = Math.max(0, p.lit - dt * 0.16);
+        p.a += (Math.random() - 0.5) * 1.2 * dt;
+        // 혼자 떠도는 속도와, 깨어난 뒤 다 함께 도는 속도를 밝기만큼 섞는다
+        var k = p.lit * p.lit, fx = Math.cos(p.a) * 10, fy = Math.sin(p.a) * 10, tx = -dy / d * 34, ty = dx / d * 34;
+        p.x += (fx * (1 - k) + tx * k) * dt;
+        p.y += (fy * (1 - k) + ty * k) * dt;
+        if (p.x < -20) p.x = W + 20; else if (p.x > W + 20) p.x = -20;
+        if (p.y < -20) p.y = H + 20; else if (p.y > H + 20) p.y = -20;
+      });
+    }
+
+    function draw(time) {
+      ctx.clearRect(0, 0, W, H);
+      // 리더의 빛
+      var pulse = 0.5 + 0.5 * Math.sin(time * 1.6);
+      var g = ctx.createRadialGradient(leader.x, leader.y, 0, leader.x, leader.y, 260);
+      g.addColorStop(0, 'rgba(129,140,248,' + (0.10 + 0.06 * pulse) + ')');
+      g.addColorStop(1, 'rgba(129,140,248,0)');
+      ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+      // 퍼지는 물결
+      waves.forEach(function (wv) {
+        var fade = Math.max(0, 1 - wv.r / Math.max(W, H));
+        ctx.strokeStyle = 'rgba(165,180,252,' + (0.28 * fade) + ')';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath(); ctx.arc(leader.x, leader.y, wv.r, 0, 6.283); ctx.stroke();
+      });
+      // 깨어난 점끼리 잇는 선
+      var max = 140;
+      for (var i = 0; i < nodes.length; i++) for (var j = i + 1; j < nodes.length; j++) {
+        var a = nodes[i], b = nodes[j], dx = a.x - b.x, dy = a.y - b.y;
+        if (Math.abs(dx) > max || Math.abs(dy) > max) continue;
+        var d = Math.hypot(dx, dy);
+        if (d > max) continue;
+        var al = (1 - d / max) * (0.04 + 0.4 * Math.min(a.lit, b.lit));
+        ctx.strokeStyle = 'rgba(165,180,252,' + al + ')'; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      }
+      // 점
+      nodes.forEach(function (p) {
+        if (p.lit > 0.05) {
+          ctx.fillStyle = 'rgba(129,140,248,' + (0.22 * p.lit) + ')';
+          ctx.beginPath(); ctx.arc(p.x, p.y, p.r * 4.5, 0, 6.283); ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(' + Math.round(148 + 51 * p.lit) + ',' + Math.round(163 + 47 * p.lit) + ',' + Math.round(184 + 70 * p.lit) + ',' + (0.35 + 0.6 * p.lit) + ')';
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1 + 0.5 * p.lit), 0, 6.283); ctx.fill();
+      });
+    }
+
+    function loop(ts) {
+      var t = ts / 1000, dt = Math.min(0.05, t - (last || t));
+      last = t;
+      step(dt); draw(t);
+      raf = requestAnimationFrame(loop);
+    }
+    function start() { if (!raf && visible && !document.hidden) { last = 0; raf = requestAnimationFrame(loop); } }
+    function stop() { cancelAnimationFrame(raf); raf = 0; }
+
+    size();
+    if (reduce) { draw(0); addEventListener('resize', function () { size(); draw(0); }); return; }
+    var rt; addEventListener('resize', function () { clearTimeout(rt); rt = setTimeout(size, 150); });
+    if ('IntersectionObserver' in window) new IntersectionObserver(function (e) { visible = e[0].isIntersecting; visible ? start() : stop(); }).observe(hero);
+    document.addEventListener('visibilitychange', function () { document.hidden ? stop() : start(); });
+    start();
   })();
 
   // 버튼에 따라 문의 구분을 미리 골라 둔다
